@@ -1,13 +1,47 @@
-[bits 32]           ; 32 bits
-[extern kernel_main]
+[BITS 32]
 
 section .text
-global _start
+    align 4
+    dd 0x1BADB002
+    dd 0x00
+    dd -(0x1BADB002 + 0x00)
 
-_start:
-    ; chama o kernel em C
-    call kernel_main
+global start
+global keyboard_handler
+global read_port
+global write_port
+global load_idt
 
-    ; loop infinito (caso kernel retorne)
-.hang:
-    jmp .hang
+extern kmain
+extern keyboard_handler_main
+
+read_port:
+    mov edx, [esp + 4]
+    in al, dx
+    ret
+
+write_port:
+    mov edx, [esp + 4]
+    mov al, [esp + 8]
+    out dx, al
+    ret
+
+load_idt:
+    mov edx, [esp + 4]
+    lidt [edx]
+    sti
+    ret
+
+keyboard_handler:
+    call keyboard_handler_main
+    iretd
+
+start:
+    cli
+    mov esp, stack_space
+    call kmain
+    hlt
+
+section .bss
+resb 8192
+stack_space:

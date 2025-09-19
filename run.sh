@@ -1,14 +1,14 @@
 #!/bin/bash
 set -e
 
-# Compila bootloader
-nasm -f elf32 src/bootloader.asm -o src/kasm.o
+# Compila bootloader em ELF 32-bit
+nasm -f elf32 src/bootloader.asm -o src/bootloader.o
 
-# Compila kernel em C
-gcc -m32 -ffreestanding -c src/kernel.c -o src/kc.o
+# Compila kernel em ELF 32-bit
+gcc -m32 -ffreestanding -c src/kernel.c -o src/kernel.o
 
-# Linka tudo
-ld -m elf_i386 -T src/link.ld -o src/kernel.bin src/kasm.o src/kc.o
+# Linka bootloader + kernel
+ld -m elf_i386 -T src/link.ld -o src/kernel.bin src/bootloader.o src/kernel.o
 
-# Executa no QEMU
-qemu-system-i386 -kernel src/kernel.bin
+# Roda no QEMU
+qemu-system-i386 -kernel src/kernel.bin -no-reboot
