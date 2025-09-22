@@ -17,12 +17,13 @@ int ganhou = 0;
 int game_over = 0;
 int waiting_restart = 0;
 
-// Tamanho da tela
 #define LINES 25
 #define COLUMNS 80
 #define BYTES_FOR_EACH_ELEMENT 2
 #define SCREENSIZE (BYTES_FOR_EACH_ELEMENT * COLUMNS * LINES)
-// Portas do teclado
+#define COLOR_DEFAULT 0x07
+#define COLOR_CORRECT 0x0D
+#define COLOR_PRESENT 0x0C
 #define KEYBOARD_DATA_PORT 0x60
 #define KEYBOARD_STATUS_PORT 0x64
 #define IDT_SIZE 256
@@ -46,22 +47,21 @@ struct IDT_entry {
 
 struct IDT_entry IDT[IDT_SIZE];
 
-// Protótipos
 void kmain(void);
-void idt_init(void);
-void kb_init(void);
+void idt_setup(void);
+void kb_setup(void);
 void keyboard_handler_main(void);
-void inicializar(void);
-void inserirLetra(char c);
-void apagarLetra(void);
-void verificarPalavra(void);
-void kprint(const char *str);
-void kprint_newline(void);
-void kprint_char_color(char c, unsigned char color);
-void clear_screen(void);
-void mensagem_ganhou(void);
-void mensagem_perdeu(void);
-void reiniciar_jogo(void);
+void game_init(void);
+void game_insert_letter(char c);
+void game_backspace(void);
+void game_check(void);
+void vga_print(const char *str);
+void vga_newline(void);
+void vga_putc(char c, unsigned char color);
+void vga_clear(void);
+void game_win_msg(void);
+void game_lose_msg(void);
+void game_restart(void);
 
 // Funções externas do bootloader
 extern char read_port(unsigned short port);
@@ -70,7 +70,7 @@ extern void load_idt(unsigned long *idt_ptr);
 
 // -----------------------------------------------------------------
 // Inicialização da IDT
-void idt_init(void)
+void idt_setup(void)
 {
     unsigned long keyboard_address;
     unsigned long idt_address;
@@ -108,34 +108,34 @@ void idt_init(void)
 }
 
 // Inicializa teclado (desmascara apenas IRQ1)
-void kb_init(void) {
+void kb_setup(void) {
     write_port(0x21, 0xFD);
 }
 
 // -----------------------------------------------------------------
 // Funções de saída na tela
-void kprint(const char *str) {
+void vga_print(const char *str) {
     unsigned int i = 0;
     while (str[i] != '\0') {
         vidptr[current_loc++] = str[i++];
-        vidptr[current_loc++] = 0x07;
+        vidptr[current_loc++] = COLOR_DEFAULT;
     }
 }
 
-void kprint_char_color(char c, unsigned char color) {
+void vga_putc(char c, unsigned char color) {
     vidptr[current_loc++] = c;
     vidptr[current_loc++] = color;
 }
 
-void kprint_newline(void) {
+void vga_newline(void) {
     unsigned int line_size = BYTES_FOR_EACH_ELEMENT * COLUMNS;
     current_loc = current_loc + (line_size - current_loc % line_size);
 }
 
-void clear_screen(void) {
+void vga_clear(void) {
     for(unsigned int i=0; i<SCREENSIZE; i+=2) {
         vidptr[i] = ' ';
-        vidptr[i+1] = 0x07;
+        vidptr[i+1] = COLOR_DEFAULT;
     }
     current_loc = 0;
 }
@@ -151,7 +151,7 @@ static int bcd_to_bin(unsigned char v) {
     return (v & 0x0F) + ((v >> 4) * 10);
 }
 
-void escolher_palavra() {
+void game_choose_word() {
     // Usa tempo do RTC (CMOS) para variar a palavra
     int sec = bcd_to_bin(cmos_read(0x00));
     int min = bcd_to_bin(cmos_read(0x02));
@@ -163,43 +163,43 @@ void escolher_palavra() {
     palavra_correta[PALAVRA_TAM] = '\0';
 }
 
-void inicializar() {
-    escolher_palavra();
-    clear_screen();
-    kprint("Bem-vindo ao Forca Kernel!");
-    kprint_newline();
-    kprint("Digite uma palavra de 6 letras e pressione ENTER");
-    kprint_newline();
-    kprint("Cores: ROXO = letra certa, lugar certo");
-    kprint_newline();
-    kprint("       VERMELHO = letra certa, lugar errado");
-    kprint_newline();
+void game_init() {
+    game_choose_word();
+    vga_clear();
+    vga_print("Bem-vindo ao Forca Kernel!");
+    vga_newline();
+    vga_print("Digite uma palavra de 6 letras e pressione ENTER");
+    vga_newline();
+    vga_print("Cores: ROXO = letra certa, lugar certo");
+    vga_newline();
+    vga_print("       VERMELHO = letra certa, lugar errado");
+    vga_newline();
 }
 
-void mensagem_ganhou() {
-    kprint_newline();
-    kprint("VOCE VENCEU!!");
+void game_win_msg() {
+    vga_newline();
+    vga_print("VOCE VENCEU!!");
 }
 
-void mensagem_perdeu() {
-    kprint_newline();
-    kprint("VOCE PERDEU. PALAVRA: ");
+void game_lose_msg() {
+    vga_newline();
+    vga_print("VOCE PERDEU. PALAVRA: ");
     for(int i=0;i<PALAVRA_TAM;i++) {
         char s[2] = { palavra_correta[i], '\0' };
-        kprint(s);
+        vga_print(s);
     }
 }
 
-void inserirLetra(char c) {
+void game_insert_letter(char c) {
     if(game_over) return;
     if(letra_atual < PALAVRA_TAM) {
         tentativa[letra_atual++] = c;
         char str[2] = {c,'\0'};
-        kprint(str);
+        vga_print(str);
     }
 }
 
-void apagarLetra() {
+void game_backspace() {
     if(letra_atual > 0) {
         letra_atual--;
         tentativa[letra_atual] = '\0';
@@ -209,7 +209,7 @@ void apagarLetra() {
     }
 }
 
-void verificarPalavra() {
+void game_check() {
     if(game_over) return;
     if(letra_atual != PALAVRA_TAM) return;
 
@@ -220,65 +220,66 @@ void verificarPalavra() {
     int usadas_corretas[PALAVRA_TAM] = {0};
     int usadas_tentativa[PALAVRA_TAM] = {0};
 
-    // Roxo (era Verde)
+    // Nova lógica baseada em contagem
+    int target_counts[26] = {0};
+    for(int i=0;i<PALAVRA_TAM;i++) {
+        char c = palavra_correta[i];
+        if(c>='A' && c<='Z') target_counts[c-'A']++;
+    }
+
     for(int i=0;i<PALAVRA_TAM;i++) {
         if(tentativa[i]==palavra_correta[i]) {
-            kprint_char_color(tentativa[i], 0x0D);
             usadas_corretas[i]=1;
             usadas_tentativa[i]=1;
             acertos++;
-        } else {
-            kprint_char_color(tentativa[i], 0x07);
+            if(tentativa[i]>='A' && tentativa[i]<='Z') target_counts[tentativa[i]-'A']--;
         }
     }
 
-    // Vermelho (era Amarelo)
     for(int i=0;i<PALAVRA_TAM;i++) {
-        if(usadas_tentativa[i]) continue;
-        for(int j=0;j<PALAVRA_TAM;j++) {
-            if(!usadas_corretas[j] && tentativa[i]==palavra_correta[j]) {
-                unsigned int pos = current_loc - (PALAVRA_TAM-i)*2;
-                vidptr[pos]=tentativa[i];
-                vidptr[pos+1]=0x0C;
-                usadas_corretas[j]=1;
-                usadas_tentativa[i]=1;
-                break;
+        unsigned char color = COLOR_DEFAULT;
+        if(usadas_tentativa[i]) {
+            color = COLOR_CORRECT;
+        } else {
+            char c = tentativa[i];
+            if(c>='A' && c<='Z' && target_counts[c-'A']>0) {
+                color = COLOR_PRESENT;
+                target_counts[c-'A']--;
             }
         }
+        vga_putc(tentativa[i], color);
     }
 
     if(acertos==PALAVRA_TAM) {
         ganhou=1;
         game_over=1;
-        kprint_newline();
-        mensagem_ganhou();
-        kprint_newline();
-        kprint("Jogar novamente? Pressione R");
-        kprint_newline();
+        vga_newline();
+        game_win_msg();
+        vga_newline();
+        vga_print("Jogar novamente? Pressione R");
+        vga_newline();
         waiting_restart = 1;
     }
 
-    kprint_newline();
+    vga_newline();
     tentativas++;
     letra_atual=0;
 
     if(!ganhou && tentativas >= MAX_TENTATIVAS) {
         game_over = 1;
-        kprint_newline();
-        mensagem_perdeu();
-        kprint_newline();
-        kprint("Reinicie a maquina para jogar novamente.");
-        kprint_newline();
+        vga_newline();
+        game_lose_msg();
+        vga_newline();
+        vga_print("Reinicie a maquina para jogar novamente.");
+        vga_newline();
     }
 }
 
-// -----------------------------------------------------------------
-// Interrupção do teclado (chamada pelo bootloader)
 void keyboard_handler_main(void) {
     unsigned char status;
     char keycode;
 
-    write_port(0x20,0x20); // EOI PIC
+    write_port(0x20,0x20);
 
     if(game_over && !waiting_restart) return;
 
@@ -292,50 +293,50 @@ void keyboard_handler_main(void) {
             }
             return;
         }
-        if(keycode == 0x0E) { // Backspace
-            apagarLetra();
+        if(keycode == 0x0E) {
+            game_backspace();
             return;
         }
-        if(keycode == 0x1C) { // Enter
-            verificarPalavra();
+        if(keycode == 0x1C) {
+            game_check();
             return;
         }
         char letra = keyboard_map[(unsigned char)keycode];
         if(letra >= 'a' && letra <= 'z') {
             letra = letra - 'a' + 'A';
-            inserirLetra(letra);
+            game_insert_letter(letra);
         }
     }
 }
 
-void reiniciar_jogo() {
+void game_restart() {
     tentativas = 0;
     letra_atual = 0;
     ganhou = 0;
     game_over = 0;
     waiting_restart = 0;
     tentativa[0] = '\0';
-    escolher_palavra();
-    clear_screen();
-    kprint("Bem-vindo ao Forca Kernel!");
-    kprint_newline();
-    kprint("Digite uma palavra de 6 letras e pressione ENTER");
-    kprint_newline();
-    kprint("Cores: ROXO = letra certa, lugar certo");
-    kprint_newline();
-    kprint("       VERMELHO = letra certa, lugar errado");
-    kprint_newline();
+    game_choose_word();
+    vga_clear();
+    vga_print("Bem-vindo ao Forca Kernel!");
+    vga_newline();
+    vga_print("Digite uma palavra de 6 letras e pressione ENTER");
+    vga_newline();
+    vga_print("Cores: ROXO = letra certa, lugar certo");
+    vga_newline();
+    vga_print("       VERMELHO = letra certa, lugar errado");
+    vga_newline();
 }
 
 // -----------------------------------------------------------------
 // Loop principal do kernel
 void kmain(void) {
-    clear_screen();
-    idt_init();
-    kb_init();
-    asm volatile("sti"); // Habilita interrupções
+    vga_clear();
+    idt_setup();
+    kb_setup();
+    asm volatile("sti");
 
-    inicializar();
+    game_init();
 
     while(1) {
         asm volatile("hlt");
