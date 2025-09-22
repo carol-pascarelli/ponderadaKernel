@@ -289,7 +289,7 @@ void keyboard_handler_main(void) {
         if(waiting_restart) {
             char letra_r = keyboard_map[(unsigned char)keycode];
             if(letra_r == 'r' || letra_r == 'R') {
-                reiniciar_jogo();
+                game_restart();
             }
             return;
         }
