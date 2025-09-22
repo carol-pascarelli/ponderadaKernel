@@ -17,6 +17,8 @@ sudo apt install nasm gcc-multilib qemu-system-x86 make -y
 
 O script compila o bootloader em assembly e o kernel em C (ELF 32-bit), faz o link com `ld` e executa no QEMU.
 
+[Link para o vídeo exolicativo da ponderada](https://youtu.be/_89tMi1jmzo)
+
 ### Arquitetura
 
 - Bootloader (`src/bootloader.asm`): define multiboot, inicializa a pilha, exporta rotinas `read_port`, `write_port`, `load_idt` e o stub de interrupção `keyboard_handler` que encerra com `iretd`. Chama `kmain`.
